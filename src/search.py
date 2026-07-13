@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from src.vector_store import FaissVectorStore
+from src.vector_store import FaissVectorStore, ChromaDBVectorStore
 from langchain_groq import ChatGroq
 
 load_dotenv()
@@ -37,3 +37,20 @@ class RAGSearch:
 #     query = "What is attention mechanism?"
 #     summary = rag_search.search_and_summarize(query, top_k=3)
 #     print("Summary:", summary)
+
+class RAGSearch2:
+    def __init__(self,llm_model: str = "llama-3.1-8b-instant"):
+        self.vectorstore = ChromaDBVectorStore()
+        groq_api_key = ""
+        self.llm = ChatGroq(groq_api_key=groq_api_key, model_name=llm_model)
+        print(f"[INFO] Groq LLM initialized: {llm_model}")
+
+    def search_and_summarize(self, query: str) -> str:
+        results = self.vectorstore.query(query_text=query)
+        texts = [r["content"] for r in results]
+        context = "\n\n".join(texts)
+        if not context:
+            return "No relevant documents found."
+        prompt = f"""Summarize the following context for the query: '{query}'\n\nContext:\n{context}\n\nSummary:"""
+        response = self.llm.invoke([prompt])
+        return response.content

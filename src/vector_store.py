@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+import chromadb
 import faiss
 import numpy as np
 import pickle
@@ -74,3 +76,71 @@ class FaissVectorStore:
 #     store.build_from_documents(docs)
 #     store.load()
 #     print(store.query("What is attention mechanism?", top_k=3))
+
+class ChromaDBVectorStore:
+    def __init__(self, collection_name: str = "pdf_documents", embedding_model: str = "BAAI/bge-small-en-v1.5"):
+        self.index = None
+        self.metadata = []
+        self.embedding_model = embedding_model
+        self.model = SentenceTransformer(embedding_model)
+        self.collection_name = collection_name
+        self.client = None
+        self.collection = None
+        current_dir = Path(__file__).resolve().parent
+        self.persist_dir = str(current_dir.parent / "data" / "vector_store")
+        self._initialize_store()
+        print(f"[INFO] Loaded embedding model: {embedding_model}")
+    
+    def _initialize_store(self):
+        try:
+            #Create persistent ChromaDB client
+            self.client = chromadb.PersistentClient(path=self.persist_dir)
+
+            #Get or create collection
+            self.collection = self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata={"description" : "pdf document embedding for RAG"}
+            )
+        except Exception as e:
+            print(f"Error initialize vector store: {e}")
+            raise
+
+    def query(self, query_text: str, top_k: int = 5,score_threshold: float = 0.0):
+        embeddings = self.model.encode(query_text,show_progress_bar=True)
+        try:
+            results = self.collection.query(
+                query_embeddings=[embeddings.tolist()],
+                n_results=top_k
+            )
+            # Process results
+            retrieved_docs = []
+            
+            if results['documents'] and results['documents'][0]:
+                documents = results['documents'][0]
+                metadatas = results['metadatas'][0]
+                distances = results['distances'][0]
+                ids = results['ids'][0]
+                
+                for i, (doc_id, document, metadata, distance) in enumerate(zip(ids, documents, metadatas, distances)):
+                    # Convert distance to similarity score (ChromaDB uses cosine distance)
+                    similarity_score = 1 - distance
+                    
+                    if similarity_score >= score_threshold:
+                        retrieved_docs.append({
+                            'id': doc_id,
+                            'content': document,
+                            'metadata': metadata,
+                            'similarity_score': similarity_score,
+                            'distance': distance,
+                            'rank': i + 1
+                        })
+                
+                print(f"Retrieved {len(retrieved_docs)} documents (after filtering)")
+            else:
+                print("No documents found")
+            
+            return retrieved_docs
+            
+        except Exception as e:
+            print(f"Error during retrieval: {e}")
+            return []
