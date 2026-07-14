@@ -11,3 +11,5 @@ dotenv
 typesense
 langchain_openai
 langgraph
+langchain-chroma
+markitdown
